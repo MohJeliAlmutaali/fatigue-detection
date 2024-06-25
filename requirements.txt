@@ -1,5 +1,5 @@
 streamlit
-dlib==19.22.0
+dlib==19.24.4
 opencv-python
 numpy
 pygame
