@@ -22,7 +22,7 @@ queue = np.zeros(30, dtype=int).tolist()
 
 # Inisialisasi pygame untuk memainkan suara
 pygame.mixer.init()
-alarm_sound = pygame.mixer.Sound("alarm.wav")
+alarm_sound = pygame.mixer.Sound("alarm.mp3")
 
 # Fungsi utama untuk memproses video dan menampilkan hasilnya
 def main():
