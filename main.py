@@ -1,11 +1,24 @@
-import dlib
-import cv2
-import numpy as np
 import streamlit as st
+import cv2
+import dlib
+import numpy as np
 import pygame
-import time
+import threading
+from firebase_config import initialize_firebase
+from firebase_admin import db  # Pastikan Anda telah mengimpor db
 
-# Fungsi konversi format landmarks
+# Initialize pygame mixer for playing sound
+pygame.mixer.init()
+
+# Function to play the alarm sound
+def play_alarm():
+    pygame.mixer.music.load('alarm.mp3')
+    pygame.mixer.music.play(-1)  # Play in a loop
+
+# Function to stop the alarm sound
+def stop_alarm():
+    pygame.mixer.music.stop()
+
 def landmarks_to_np(landmarks, dtype="int"):
     num = landmarks.num_parts
     coords = np.zeros((num, 2), dtype=dtype)
@@ -13,28 +26,27 @@ def landmarks_to_np(landmarks, dtype="int"):
         coords[i] = (landmarks.part(i).x, landmarks.part(i).y)
     return coords
 
-predictor_path = "./shape_predictor_68_face_landmarks.dat" # Sesuaikan path Anda
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor(predictor_path)
-
-# Inisialisasi antrian deret waktu
-queue = np.zeros(30, dtype=int).tolist()
-
-# Inisialisasi pygame untuk memainkan suara
-pygame.mixer.init()
-alarm_sound = pygame.mixer.Sound("alarm.mp3")
-
-# Fungsi utama untuk memproses video dan menampilkan hasilnya
 def main():
-    st.title("Deteksi Kelelahan dengan Dlib dan OpenCV")
+    st.title("Fatigue Detection System")
 
-    # Membaca frame video dari webcam
-    video_capture = cv2.VideoCapture(0)
-    stframe = st.empty()
+    initialize_firebase()
+
+    predictor_path = "./shape_predictor_68_face_landmarks.dat"
+    detector = dlib.get_frontal_face_detector()
+    predictor = dlib.shape_predictor(predictor_path)
+
+    # Set up webcam capture
+    cap = cv2.VideoCapture(0)
+    queue = np.zeros(30, dtype=int).tolist()
+    alarm_playing = False
+
+    # Create a placeholder for the video frame
+    frame_placeholder = st.empty()
 
     while True:
-        ret, frame = video_capture.read()
+        ret, frame = cap.read()
         if not ret:
+            st.write("Failed to grab frame")
             break
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -47,10 +59,12 @@ def main():
             h = rect.bottom() - y
 
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, "Face #{}".format(i + 1), (x - 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.putText(frame, "Face #{}".format(i + 1), (x - 10, y - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
 
             landmarks = predictor(gray, rect)
             landmarks = landmarks_to_np(landmarks)
+
             for (x, y) in landmarks:
                 cv2.circle(frame, (x, y), 2, (0, 0, 255), -1)
 
@@ -66,25 +80,32 @@ def main():
             print(d_judge)
 
             flag = int(d_judge < 0.25)
-            queue = queue[1:] + [flag]
+            queue = queue[1:len(queue)] + [flag]
 
             if sum(queue) > len(queue) / 2:
-                cv2.putText(frame, "WARNING !", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-                # Hidupkan alarm jika tidak sedang berbunyi
-                if not pygame.mixer.get_busy():
-                    alarm_sound.play()
+                cv2.putText(frame, "WARNING !", (100, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
+                if not alarm_playing:
+                    threading.Thread(target=play_alarm).start()
+                    alarm_playing = True
+                    db.reference('status').set({'fatigue': True})
             else:
-                cv2.putText(frame, "SAFE", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
-                # Matikan alarm jika berbunyi
-                if pygame.mixer.get_busy():
-                    pygame.mixer.stop()
+                cv2.putText(frame, "SAFE", (100, 100),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                if alarm_playing:
+                    stop_alarm()
+                    alarm_playing = False
+                    db.reference('status').set({'fatigue': False})
 
-        stframe.image(frame, channels="BGR")
+        # Convert the frame to RGB format
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        if cv2.waitKey(1) & 0xFF == 27:  # Tekan "Esc" untuk keluar
-            break
+        # Display the frame
+        frame_placeholder.image(frame, channels="RGB")
 
-    video_capture.release()
+    cap.release()
+    stop_alarm()
+    pygame.mixer.quit()
 
 if __name__ == "__main__":
     main()
