@@ -1,0 +1,5 @@
+streamlit
+dlib
+opencv-python
+numpy
+pygame
