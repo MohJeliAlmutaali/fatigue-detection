@@ -1,7 +1,7 @@
 streamlit
-dlib==19.24.4
+dlib==19.22.0
+pygame==2.1.0
 opencv-python
 numpy
-pygame
 firebase-admin
 cmake
